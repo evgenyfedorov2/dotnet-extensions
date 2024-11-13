@@ -4,13 +4,16 @@
 #if NET9_0_OR_GREATER
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
+using Microsoft.Shared.DiagnosticIds;
 
 namespace Microsoft.AspNetCore.Diagnostics.Logging;
 
 /// <summary>
 /// The options for LoggerBuffer.
 /// </summary>
+[Experimental(diagnosticId: DiagnosticIds.Experiments.Telemetry, UrlFormat = DiagnosticIds.UrlFormat)]
 public class HttpRequestBufferOptions
 {
     /// <summary>
