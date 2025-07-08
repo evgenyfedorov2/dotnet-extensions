@@ -380,6 +380,59 @@ public sealed class WindowsContainerSnapshotProviderTests
     }
 
     [Fact]
+    public void SnapshotProvider_EmitsMemoryUsageMetric()
+    {
+        _appMemoryUsage = 200UL;
+        ulong updatedAppMemoryUsage = 600UL;
+
+        _processInfoMock.SetupSequence(p => p.GetCurrentProcessMemoryUsage())
+            .Returns(() => _appMemoryUsage)
+            .Returns(updatedAppMemoryUsage)
+            .Throws(new InvalidOperationException("We shouldn't hit here..."));
+
+        _processInfoMock.SetupSequence(p => p.GetMemoryUsage())
+            .Returns(() => _appMemoryUsage)
+            .Returns(updatedAppMemoryUsage)
+            .Throws(new InvalidOperationException("We shouldn't hit here..."));
+
+        var fakeClock = new FakeTimeProvider();
+        using var meter = new Meter(nameof(SnapshotProvider_EmitsMemoryMetrics));
+        var meterFactoryMock = new Mock<IMeterFactory>();
+        meterFactoryMock.Setup(x => x.Create(It.IsAny<MeterOptions>()))
+            .Returns(meter);
+        using var metricCollector = new MetricCollector<long>(meter, ResourceUtilizationInstruments.ContainerMemoryUtilization, fakeClock);
+
+        var options = new ResourceMonitoringOptions
+        {
+            MemoryConsumptionRefreshInterval = TimeSpan.FromMilliseconds(2),
+        };
+        var snapshotProvider = new WindowsContainerSnapshotProvider(
+            _memoryInfoMock.Object,
+            _systemInfoMock.Object,
+            _processInfoMock.Object,
+            _logger,
+            meterFactoryMock.Object,
+            () => _jobHandleMock.Object,
+            fakeClock,
+            options);
+
+        // Step #0 - state in the beginning:
+        metricCollector.RecordObservableInstruments();
+        Assert.NotNull(metricCollector.LastMeasurement?.Value);
+        Assert.Equal(200, metricCollector.LastMeasurement.Value); // Consuming 200MB initially.
+
+        // Step #1 - simulate 1 millisecond passing and collect metrics again:
+        fakeClock.Advance(options.MemoryConsumptionRefreshInterval - TimeSpan.FromMilliseconds(1));
+        metricCollector.RecordObservableInstruments();
+        Assert.Equal(200, metricCollector.LastMeasurement.Value); // Still consuming 200MB as gauge wasn't updated.
+
+        // Step #2 - simulate 2 milliseconds passing and collect metrics again:
+        fakeClock.Advance(TimeSpan.FromMilliseconds(1));
+        metricCollector.RecordObservableInstruments();
+        Assert.Equal(600, metricCollector.LastMeasurement.Value); // Consuming600MB of the memory afterwards.
+    }
+
+    [Fact]
     public Task SnapshotProvider_EmitsLogRecord()
     {
         var snapshotProvider = new WindowsContainerSnapshotProvider(
